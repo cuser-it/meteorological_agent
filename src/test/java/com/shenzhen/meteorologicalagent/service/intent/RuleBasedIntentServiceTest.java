@@ -29,6 +29,15 @@ class RuleBasedIntentServiceTest {
     }
 
     @Test
+    void shouldRecognizeProfessionalRewriteRequest() {
+        IntentResult result = intentService.recognize("专业一点");
+
+        assertThat(result.intent()).isEqualTo(IntentType.MORE_DETAIL);
+        assertThat(result.parameters()).containsEntry("moreDetail", true);
+        assertThat(result.parameters()).extracting("matchedKeywords").asList().contains("专业");
+    }
+
+    @Test
     void shouldReturnUnknownWhenNoRuleMatched() {
         IntentResult result = intentService.recognize("今天午饭吃什么");
 

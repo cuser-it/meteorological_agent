@@ -36,7 +36,7 @@ public class RuleBasedIntentService implements IntentService {
                 match(IntentType.SIMPLIFY, 0.94, "简化表达", normalized,
                         "简单", "简洁", "短一点", "少一点", "精简", "简短"),
                 match(IntentType.MORE_DETAIL, 0.92, "增加细节", normalized,
-                        "详细", "具体", "展开", "更多细节", "专业解释"),
+                        "详细", "具体", "展开", "更多细节", "专业", "专业解释", "专业一点", "更专业", "专业化"),
                 match(IntentType.MORE_FORMAL, 0.92, "提升正式程度", normalized,
                         "正式", "规范", "公文", "严肃", "发布口径"),
                 match(IntentType.MORE_CASUAL, 0.88, "调整为更通俗表达", normalized,
