@@ -42,7 +42,22 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 /usr/bin/mvn spring-boot:run
 curl --noproxy '*' http://127.0.0.1:8080/api/health
 ```
 
-### 3.2 生成第一版预报
+### 3.2 Swagger UI
+
+浏览器打开：
+
+```text
+http://127.0.0.1:8080/swagger-ui.html
+```
+
+观察点：
+
+- API 按 Weather AI、Conversation、Prompt、Evaluation、Workflow Trace 分组。
+- `/api/weather/generate` 内置深圳短临预报请求示例。
+- `/api/prompts/render` 标明该接口用于开发、审计和演示，不应对普通用户开放。
+- `/v3/api-docs` 可导出 OpenAPI JSON，方便前端或 API 网关接入。
+
+### 3.3 生成第一版预报
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/generate \
@@ -86,7 +101,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/generate \
 - `evaluation.score`
 - `trace.traceId`
 
-### 3.3 连续改写
+### 3.4 连续改写
 
 将上一步的 `conversationId` 放入请求：
 
@@ -108,7 +123,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/chat \
 - `changes` 包含“简化表达”和“增加风险提示”
 - 没有重新开始聊天，而是基于上一版改写
 
-### 3.4 查询 Trace
+### 3.5 查询 Trace
 
 ```bash
 curl --noproxy '*' http://127.0.0.1:8080/api/traces/{traceId}
@@ -123,7 +138,7 @@ Trace 步骤包括：
 - evaluation
 - memory-save
 
-### 3.5 Prompt 渲染调试
+### 3.6 Prompt 渲染调试
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/prompts/render \
@@ -151,7 +166,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/prompts/render \
 - `systemPrompt`
 - `userPrompt`
 
-### 3.6 独立 Evaluation
+### 3.7 独立 Evaluation
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/evaluations \

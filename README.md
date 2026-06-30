@@ -66,6 +66,11 @@ curl --noproxy '*' http://127.0.0.1:8080/api/health
 
 当前环境可能配置了 HTTP proxy，测试本地接口时建议加 `--noproxy '*'`。
 
+Swagger UI：
+
+- http://127.0.0.1:8080/swagger-ui.html
+- http://127.0.0.1:8080/v3/api-docs
+
 ## OpenAI Compatible / Alibaba Bailian
 
 真实模型配置示例：

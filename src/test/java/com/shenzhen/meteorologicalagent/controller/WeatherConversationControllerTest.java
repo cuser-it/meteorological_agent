@@ -111,6 +111,17 @@ class WeatherConversationControllerTest {
                 .andExpect(jsonPath("$.data.structuredOutput.summary", containsString("深圳")));
     }
 
+    @Test
+    void shouldExposeOpenApiDocumentForDemo() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("Shenzhen Meteorological Agent API"))
+                .andExpect(jsonPath("$.paths['/api/weather/generate']").exists())
+                .andExpect(jsonPath("$.paths['/api/weather/chat']").exists())
+                .andExpect(jsonPath("$.paths['/api/prompts/render']").exists())
+                .andExpect(jsonPath("$.tags[?(@.name == 'Weather AI')]").exists());
+    }
+
     private Map<String, Object> generateRequest() {
         return Map.of(
                 "sessionId", "s-001",
