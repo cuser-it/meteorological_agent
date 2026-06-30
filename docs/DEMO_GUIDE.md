@@ -57,7 +57,30 @@ http://127.0.0.1:8080/swagger-ui.html
 - `/api/prompts/render` 标明该接口用于开发、审计和演示，不应对普通用户开放。
 - `/v3/api-docs` 可导出 OpenAPI JSON，方便前端或 API 网关接入。
 
-### 3.3 生成第一版预报
+### 3.3 Vue 前端工作台
+
+启动前端：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:5173
+```
+
+观察点：
+
+- 左侧维护 WeatherContext、API Base 和连续改写指令。
+- 点击 Generate 后立即进入 RUNNING 状态，避免空白等待。
+- 中间区域逐段展示模型流式输出，不需要等完整响应返回。
+- 右侧实时展示前端工作流进度，并在模型完成后刷新真实 Trace、Intent、Prompt Render、History 和 Raw Response。
+
+### 3.4 生成第一版预报
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/generate \
@@ -101,7 +124,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/generate \
 - `evaluation.score`
 - `trace.traceId`
 
-### 3.4 连续改写
+### 3.5 连续改写
 
 将上一步的 `conversationId` 放入请求：
 
@@ -123,7 +146,48 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/weather/chat \
 - `changes` 包含“简化表达”和“增加风险提示”
 - 没有重新开始聊天，而是基于上一版改写
 
-### 3.5 查询 Trace
+### 3.6 流式生成接口
+
+前端工作台默认使用流式接口。也可以用 curl 验证 SSE 事件：
+
+```bash
+curl --noproxy '*' -N -X POST http://127.0.0.1:8080/api/weather/generate/stream \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
+  -d '{
+    "sessionId": "s-demo-stream-001",
+    "style": "FORMAL",
+    "outputFormat": "STANDARD_FORECAST",
+    "weatherContext": {
+      "city": "深圳",
+      "forecastTime": "2026-06-30T10:00:00+08:00",
+      "validPeriod": "未来3小时",
+      "rainForecast": {
+        "level": "中到大雨",
+        "amountRange": "10-30毫米",
+        "peakPeriod": "10:30-12:00",
+        "trend": "逐渐增强后减弱",
+        "confidence": 0.82
+      },
+      "riskSignals": ["短时强降水", "道路积水风险"],
+      "dataSource": "业务系统"
+    }
+  }'
+```
+
+事件顺序：
+
+- `workflow`: 返回 traceId 和 workflowType。
+- `step`: 返回每个工作流步骤的 RUNNING/SUCCESS/FAILED 状态。
+- `intent`: 返回意图识别结果。
+- `prompt`: 返回 Prompt 元数据。
+- `delta`: 返回模型增量文本。
+- `complete`: 返回完整 `WeatherAiResponse`，结构与普通接口兼容。
+- `error`: 返回业务错误码和错误信息。
+
+流式改写接口为 `POST /api/weather/chat/stream`，请求体与普通 `/api/weather/chat` 保持一致。
+
+### 3.7 查询 Trace
 
 ```bash
 curl --noproxy '*' http://127.0.0.1:8080/api/traces/{traceId}
@@ -138,7 +202,7 @@ Trace 步骤包括：
 - evaluation
 - memory-save
 
-### 3.6 Prompt 渲染调试
+### 3.8 Prompt 渲染调试
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/prompts/render \
@@ -166,7 +230,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/prompts/render \
 - `systemPrompt`
 - `userPrompt`
 
-### 3.7 独立 Evaluation
+### 3.9 独立 Evaluation
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/evaluations \

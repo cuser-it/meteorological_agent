@@ -10,6 +10,8 @@
 - Intent Recognition
 - Conversation Memory
 - Spring AI OpenAI Compatible 调用
+- SSE 流式输出接口
+- Vue3 演示工作台
 - 本地 fallback 生成器
 - Workflow Trace
 - Structured Output
@@ -71,6 +73,16 @@ Swagger UI：
 - http://127.0.0.1:8080/swagger-ui.html
 - http://127.0.0.1:8080/v3/api-docs
 
+前端工作台：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认连接后端 `http://127.0.0.1:8080/api`，访问 http://127.0.0.1:5173。
+
 ## OpenAI Compatible / Alibaba Bailian
 
 真实模型配置示例：
@@ -93,10 +105,22 @@ export SPRING_AI_OPENAI_CHAT_COMPLETIONS_PATH=/chat/completions
 POST /api/weather/generate
 ```
 
+流式生成预报：
+
+```http
+POST /api/weather/generate/stream
+```
+
 连续改写：
 
 ```http
 POST /api/weather/chat
+```
+
+流式连续改写：
+
+```http
+POST /api/weather/chat/stream
 ```
 
 会话历史：
@@ -148,6 +172,7 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 /usr/bin/mvn test
 - Memory 版本与 reset
 - Evaluation
 - Controller 主链路
+- SSE 流式生成链路
 - Prompt render、trace 查询、history、reset
 
 ## Extension Points

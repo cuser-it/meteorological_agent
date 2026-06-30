@@ -1,5 +1,7 @@
 target/
 *.class
+frontend/node_modules/
+frontend/dist/
 
 .idea/
 *.iml
@@ -11,4 +13,3 @@ target/
 
 .env
 .env.*
-

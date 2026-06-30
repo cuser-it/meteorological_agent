@@ -5,6 +5,7 @@ import com.shenzhen.meteorologicalagent.dto.request.WeatherChatRequest;
 import com.shenzhen.meteorologicalagent.dto.request.WeatherGenerateRequest;
 import com.shenzhen.meteorologicalagent.dto.response.WeatherAiResponse;
 import com.shenzhen.meteorologicalagent.service.conversation.ConversationService;
+import com.shenzhen.meteorologicalagent.service.conversation.ConversationStreamingService;
 import com.shenzhen.meteorologicalagent.util.TraceIdUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/weather")
@@ -25,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class WeatherController {
 
     private final ConversationService conversationService;
+    private final ConversationStreamingService conversationStreamingService;
 
-    public WeatherController(ConversationService conversationService) {
+    public WeatherController(ConversationService conversationService, ConversationStreamingService conversationStreamingService) {
         this.conversationService = conversationService;
+        this.conversationStreamingService = conversationStreamingService;
     }
 
     @PostMapping("/generate")
@@ -82,6 +86,15 @@ public class WeatherController {
         return ApiResponse.success(conversationService.generate(requestBody), TraceIdUtils.currentTraceId(request));
     }
 
+    @PostMapping(value = "/generate/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "流式生成第一版短临天气预报",
+            description = "以 Server-Sent Events 返回 workflow、step、delta、complete 事件。complete 事件包含与普通生成接口兼容的 WeatherAiResponse。"
+    )
+    public SseEmitter generateStream(@Valid @RequestBody WeatherGenerateRequest requestBody) {
+        return conversationStreamingService.generate(requestBody);
+    }
+
     @PostMapping("/chat")
     @Operation(
             summary = "基于会话连续改写预报",
@@ -109,5 +122,14 @@ public class WeatherController {
             HttpServletRequest request
     ) {
         return ApiResponse.success(conversationService.chat(requestBody), TraceIdUtils.currentTraceId(request));
+    }
+
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "流式连续改写预报",
+            description = "基于已有 conversation 进行流式改写，逐段返回模型 delta，最后返回完整 WeatherAiResponse。"
+    )
+    public SseEmitter chatStream(@Valid @RequestBody WeatherChatRequest requestBody) {
+        return conversationStreamingService.chat(requestBody);
     }
 }

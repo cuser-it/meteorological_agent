@@ -1,8 +1,10 @@
 package com.shenzhen.meteorologicalagent.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -120,6 +122,28 @@ class WeatherConversationControllerTest {
                 .andExpect(jsonPath("$.paths['/api/weather/chat']").exists())
                 .andExpect(jsonPath("$.paths['/api/prompts/render']").exists())
                 .andExpect(jsonPath("$.tags[?(@.name == 'Weather AI')]").exists());
+    }
+
+    @Test
+    void shouldStreamGenerateForecast() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/weather/generate/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content(objectMapper.writeValueAsString(generateRequest())))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        MvcResult asyncResult = mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String stream = asyncResult.getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(stream)
+                .contains("event:workflow")
+                .contains("event:delta")
+                .contains("event:complete")
+                .contains("local-fallback");
     }
 
     private Map<String, Object> generateRequest() {

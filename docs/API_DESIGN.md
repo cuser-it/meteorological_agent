@@ -355,6 +355,48 @@ API 需要支撑真实企业 AI 应用的核心流程：
 - 用户输入可包含多个修改要求；`intent.intent` 表示主意图，其他要求进入 `parameters` 和 `changes`。
 - 如果识别为 `UNKNOWN`，不调用 Rewrite Prompt。
 
+## 6.5 流式接口
+
+为提升前端等待体验，系统额外提供 SSE 流式接口：
+
+| 接口 | 说明 | 请求体 |
+| --- | --- | --- |
+| `POST /api/weather/generate/stream` | 流式生成第一版短临预报 | 与 `/api/weather/generate` 一致 |
+| `POST /api/weather/chat/stream` | 流式连续改写上一版预报 | 与 `/api/weather/chat` 一致 |
+
+响应协议为 `text/event-stream`，不包裹通用 `ApiResponse`，事件数据使用 JSON。
+
+| Event | 说明 |
+| --- | --- |
+| `workflow` | 工作流启动事件，包含 `traceId`、`workflowType` |
+| `step` | 工作流步骤状态，包含 `stepName`、`status`、`latencyMs`、`attributes` |
+| `intent` | 意图识别结果 |
+| `prompt` | Prompt 元数据，包含 `promptName`、`promptVersion`、`contentHash`、`promptLength`、`moduleNames` |
+| `delta` | 模型增量文本，格式为 `{ "content": "..." }` |
+| `complete` | 完整业务结果，结构与普通接口的 `WeatherAiResponse` 一致 |
+| `error` | 错误事件，包含 `code`、`message` |
+
+示例：
+
+```text
+event:workflow
+data:{"traceId":"wt-xxx","workflowType":"WEATHER_GENERATE_STREAM"}
+
+event:delta
+data:{"content":"预计未来3小时"}
+
+event:complete
+data:{"conversationId":"c-xxx","sessionId":"s-001","version":1}
+```
+
+设计约束：
+
+- 普通 JSON API 保持兼容，适合后端服务间调用和自动化测试。
+- 流式 API 面向前端交互体验，解决 LLM 首 token 前后的等待反馈问题。
+- `complete` 事件必须返回完整业务对象，保证前端最终状态与普通接口一致。
+- `delta` 只承载文本增量，不承担版本保存、评估、Trace 完成等副作用。
+- Memory、Evaluation、Trace 的最终落点仍在后端 complete 前完成。
+
 ## 7. 查询会话历史
 
 ### 7.1 接口定义
@@ -610,4 +652,3 @@ Query 参数：
 | P1 | `POST /api/conversation/reset` |
 | P2 | `GET /api/prompts` |
 | P2 | `GET /api/audit/logs` |
-
