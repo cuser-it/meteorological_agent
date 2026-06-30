@@ -25,5 +25,7 @@ class PromptManagerTest {
         assertThat(snapshot.promptVersion()).isEqualTo("v1");
         assertThat(snapshot.userPrompt()).contains("runtime payload");
         assertThat(snapshot.contentHash()).startsWith("sha256:");
+        assertThat(snapshot.moduleNames()).contains("system", "generate-template", "runtime-payload");
+        assertThat(snapshot.moduleLengths()).containsKeys("system", "generate-template", "runtime-payload");
     }
 }

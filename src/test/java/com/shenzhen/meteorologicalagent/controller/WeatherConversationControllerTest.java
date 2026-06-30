@@ -37,10 +37,19 @@ class WeatherConversationControllerTest {
                 .andExpect(jsonPath("$.data.version").value(1))
                 .andExpect(jsonPath("$.data.intent.intent").value("GENERATE"))
                 .andExpect(jsonPath("$.data.aiResponse.content", containsString("深圳")))
+                .andExpect(jsonPath("$.data.aiResponse.structuredOutput.summary", containsString("深圳")))
+                .andExpect(jsonPath("$.data.evaluation.score").isNumber())
+                .andExpect(jsonPath("$.data.trace.workflowType").value("WEATHER_GENERATE"))
                 .andReturn();
 
         String body = generateResult.getResponse().getContentAsString();
         String conversationId = objectMapper.readTree(body).path("data").path("conversationId").asText();
+        String traceId = objectMapper.readTree(body).path("data").path("trace").path("traceId").asText();
+
+        mockMvc.perform(get("/api/traces/{traceId}", traceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.traceId").value(traceId))
+                .andExpect(jsonPath("$.data.steps.length()").value(6));
 
         mockMvc.perform(post("/api/weather/chat")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -53,7 +62,9 @@ class WeatherConversationControllerTest {
                 .andExpect(jsonPath("$.data.previousVersion").value(1))
                 .andExpect(jsonPath("$.data.version").value(2))
                 .andExpect(jsonPath("$.data.intent.intent").value("SIMPLIFY"))
-                .andExpect(jsonPath("$.data.changes[0]").value("简化表达"));
+                .andExpect(jsonPath("$.data.changes[0]").value("简化表达"))
+                .andExpect(jsonPath("$.data.evaluation.passed").isBoolean())
+                .andExpect(jsonPath("$.data.trace.workflowType").value("WEATHER_REWRITE"));
 
         mockMvc.perform(get("/api/conversation/history")
                         .param("conversationId", conversationId)
@@ -71,6 +82,33 @@ class WeatherConversationControllerTest {
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("RESET"));
+    }
+
+    @Test
+    void shouldRenderPromptAndEvaluateContent() throws Exception {
+        mockMvc.perform(post("/api/prompts/render")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "promptName", "generate",
+                                "style", "FORMAL",
+                                "outputFormat", "STANDARD_FORECAST",
+                                "weatherContext", generateRequest().get("weatherContext")
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.promptName").value("generate"))
+                .andExpect(jsonPath("$.data.moduleNames[0]").value("system"))
+                .andExpect(jsonPath("$.data.userPrompt", containsString("output-contract")))
+                .andExpect(jsonPath("$.data.renderMetadata.taskType").value("GENERATE"));
+
+        mockMvc.perform(post("/api/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "content", "预计未来3小时深圳有中到大雨，雨量10-30毫米。请注意防范短时强降水、道路积水风险。本预报仅供参考，最终签发请以值班预报员核定为准。",
+                                "weatherContext", generateRequest().get("weatherContext")
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.evaluation.score").isNumber())
+                .andExpect(jsonPath("$.data.structuredOutput.summary", containsString("深圳")));
     }
 
     private Map<String, Object> generateRequest() {

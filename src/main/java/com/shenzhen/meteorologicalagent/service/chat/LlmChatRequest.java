@@ -11,6 +11,18 @@ public record LlmChatRequest(
         WeatherContext weatherContext,
         AIResponse previousResponse,
         IntentResult intentResult,
-        String userInstruction
+        String userInstruction,
+        String workflowTraceId
 ) {
+
+    public LlmChatRequest(
+            ChatTaskType taskType,
+            com.shenzhen.meteorologicalagent.domain.ai.PromptSnapshot prompt,
+            com.shenzhen.meteorologicalagent.domain.weather.WeatherContext weatherContext,
+            AIResponse previousResponse,
+            IntentResult intentResult,
+            String userInstruction
+    ) {
+        this(taskType, prompt, weatherContext, previousResponse, intentResult, userInstruction, null);
+    }
 }

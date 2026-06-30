@@ -9,8 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -49,15 +52,45 @@ public class PromptManager {
     public PromptSnapshot snapshot(PromptName promptName, String renderedUserPrompt) {
         PromptTemplate system = get(PromptName.SYSTEM);
         PromptTemplate business = get(promptName);
-        String userPrompt = business.content() + System.lineSeparator() + System.lineSeparator() + renderedUserPrompt;
-        String hash = sha256(system.content() + "\n---\n" + userPrompt);
+        List<PromptModule> modules = new ArrayList<>();
+        modules.add(new PromptModule("system", system.content(), 10));
+        modules.add(new PromptModule(promptName.value() + "-template", business.content(), 20));
+        modules.add(new PromptModule("runtime-payload", renderedUserPrompt, 30));
+        return snapshot(promptName, modules, Map.of());
+    }
+
+    public PromptSnapshot snapshot(PromptName promptName, List<PromptModule> modules, Map<String, Object> renderMetadata) {
+        PromptTemplate business = get(promptName);
+        List<PromptModule> orderedModules = modules.stream()
+                .sorted(Comparator.comparingInt(PromptModule::order))
+                .toList();
+        String systemPrompt = orderedModules.stream()
+                .filter(module -> "system".equals(module.name()))
+                .map(PromptModule::content)
+                .findFirst()
+                .orElseGet(() -> get(PromptName.SYSTEM).content());
+        String userPrompt = orderedModules.stream()
+                .filter(module -> !"system".equals(module.name()))
+                .map(module -> "## " + module.name() + System.lineSeparator() + module.content())
+                .collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
+        String hash = sha256(systemPrompt + "\n---\n" + userPrompt);
+        Map<String, Integer> moduleLengths = orderedModules.stream()
+                .collect(Collectors.toMap(
+                        PromptModule::name,
+                        PromptModule::length,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
         return new PromptSnapshot(
                 promptName,
                 business.version(),
-                system.content(),
+                systemPrompt,
                 userPrompt,
                 hash,
-                system.content().length() + userPrompt.length()
+                systemPrompt.length() + userPrompt.length(),
+                orderedModules.stream().map(PromptModule::name).toList(),
+                moduleLengths,
+                renderMetadata
         );
     }
 

@@ -3,9 +3,11 @@ package com.shenzhen.meteorologicalagent.service.conversation;
 import com.shenzhen.meteorologicalagent.common.ErrorCode;
 import com.shenzhen.meteorologicalagent.common.exception.BusinessException;
 import com.shenzhen.meteorologicalagent.domain.ai.AIResponse;
+import com.shenzhen.meteorologicalagent.domain.ai.EvaluationResult;
 import com.shenzhen.meteorologicalagent.domain.ai.IntentResult;
 import com.shenzhen.meteorologicalagent.domain.ai.IntentType;
 import com.shenzhen.meteorologicalagent.domain.ai.PromptSnapshot;
+import com.shenzhen.meteorologicalagent.domain.ai.WorkflowTrace;
 import com.shenzhen.meteorologicalagent.domain.conversation.Conversation;
 import com.shenzhen.meteorologicalagent.domain.conversation.ConversationMessage;
 import com.shenzhen.meteorologicalagent.domain.weather.RainForecast;
@@ -20,9 +22,12 @@ import com.shenzhen.meteorologicalagent.dto.response.WeatherAiResponse;
 import com.shenzhen.meteorologicalagent.service.chat.ChatTaskType;
 import com.shenzhen.meteorologicalagent.service.chat.LlmChatRequest;
 import com.shenzhen.meteorologicalagent.service.chat.LlmChatService;
+import com.shenzhen.meteorologicalagent.service.evaluation.EvaluationService;
 import com.shenzhen.meteorologicalagent.service.intent.IntentService;
 import com.shenzhen.meteorologicalagent.service.memory.MemoryService;
 import com.shenzhen.meteorologicalagent.service.prompt.PromptBuilder;
+import com.shenzhen.meteorologicalagent.service.trace.WorkflowTraceContext;
+import com.shenzhen.meteorologicalagent.service.trace.WorkflowTraceService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,100 +44,181 @@ public class ConversationService {
     private final PromptBuilder promptBuilder;
     private final LlmChatService llmChatService;
     private final MemoryService memoryService;
+    private final EvaluationService evaluationService;
+    private final WorkflowTraceService workflowTraceService;
 
     public ConversationService(
             IntentService intentService,
             PromptBuilder promptBuilder,
             LlmChatService llmChatService,
-            MemoryService memoryService
+            MemoryService memoryService,
+            EvaluationService evaluationService,
+            WorkflowTraceService workflowTraceService
     ) {
         this.intentService = intentService;
         this.promptBuilder = promptBuilder;
         this.llmChatService = llmChatService;
         this.memoryService = memoryService;
+        this.evaluationService = evaluationService;
+        this.workflowTraceService = workflowTraceService;
     }
 
     public WeatherAiResponse generate(WeatherGenerateRequest request) {
-        validateWeatherContext(request.weatherContext());
-        IntentResult intentResult = intentService.generateIntent(request.style(), request.outputFormat());
-        PromptSnapshot prompt = promptBuilder.buildGeneratePrompt(request, intentResult);
-        AIResponse aiResponse = llmChatService.call(new LlmChatRequest(
-                ChatTaskType.GENERATE,
-                prompt,
-                request.weatherContext(),
-                null,
-                intentResult,
-                "生成一版短临天气预报"
-        ));
-        Conversation conversation = memoryService.create(
-                request.sessionId(),
-                request.weatherContext(),
-                prompt,
-                aiResponse
-        );
-        log.info(
-                "conversation_generate conversationId={} sessionId={} intent={} version={} latencyMs={} promptLength={}",
-                conversation.conversationId(),
-                conversation.sessionId(),
-                intentResult.intent(),
-                conversation.currentVersion(),
-                aiResponse.latencyMs(),
-                prompt.promptLength()
-        );
-        return new WeatherAiResponse(
-                conversation.conversationId(),
-                conversation.sessionId(),
-                null,
-                conversation.currentVersion(),
-                intentResult,
-                aiResponse,
-                List.of()
-        );
+        WorkflowTraceContext traceContext = workflowTraceService.start("WEATHER_GENERATE", request.sessionId());
+        try {
+            workflowTraceService.traceStep(traceContext, "validate-weather-context", () -> validateWeatherContext(request.weatherContext()));
+            IntentResult intentResult = workflowTraceService.traceStep(
+                    traceContext,
+                    "intent-detection",
+                    () -> intentService.generateIntent(request.style(), request.outputFormat())
+            );
+            PromptSnapshot prompt = workflowTraceService.traceStep(
+                    traceContext,
+                    "prompt-render",
+                    () -> promptBuilder.buildGeneratePrompt(request, intentResult)
+            );
+            AIResponse aiResponse = workflowTraceService.traceStep(
+                    traceContext,
+                    "llm-call",
+                    () -> llmChatService.call(new LlmChatRequest(
+                            ChatTaskType.GENERATE,
+                            prompt,
+                            request.weatherContext(),
+                            null,
+                            intentResult,
+                            "生成一版短临天气预报",
+                            traceContext.traceId()
+                    ))
+            );
+            EvaluationResult evaluation = workflowTraceService.traceStep(
+                    traceContext,
+                    "evaluation",
+                    () -> evaluationService.evaluate(aiResponse.content(), request.weatherContext())
+            );
+            Conversation conversation = workflowTraceService.traceStep(
+                    traceContext,
+                    "memory-save",
+                    () -> memoryService.create(
+                            request.sessionId(),
+                            request.weatherContext(),
+                            prompt,
+                            aiResponse
+                    )
+            );
+            traceContext.putMetadata("promptHash", prompt.contentHash());
+            traceContext.putMetadata("evaluationScore", evaluation.score());
+            WorkflowTrace trace = workflowTraceService.finish(traceContext, conversation.conversationId(), "SUCCESS");
+            log.info(
+                    "conversation_generate traceId={} conversationId={} sessionId={} intent={} version={} latencyMs={} promptLength={} evaluationScore={}",
+                    trace.traceId(),
+                    conversation.conversationId(),
+                    conversation.sessionId(),
+                    intentResult.intent(),
+                    conversation.currentVersion(),
+                    aiResponse.latencyMs(),
+                    prompt.promptLength(),
+                    evaluation.score()
+            );
+            return new WeatherAiResponse(
+                    conversation.conversationId(),
+                    conversation.sessionId(),
+                    null,
+                    conversation.currentVersion(),
+                    intentResult,
+                    aiResponse,
+                    List.of(),
+                    evaluation,
+                    trace
+            );
+        } catch (RuntimeException exception) {
+            finishFailedTrace(traceContext, null, exception);
+            throw exception;
+        }
     }
 
     public WeatherAiResponse chat(WeatherChatRequest request) {
-        Conversation conversation = memoryService.findActive(request.conversationId(), request.sessionId());
-        IntentResult intentResult = intentService.recognize(request.message());
-        if (intentResult.intent() == IntentType.UNKNOWN) {
-            throw new BusinessException(ErrorCode.UNKNOWN_INTENT, "无法识别可执行意图，请输入明确的修改要求。");
-        }
+        WorkflowTraceContext traceContext = workflowTraceService.start("WEATHER_REWRITE", request.sessionId());
+        try {
+            Conversation conversation = workflowTraceService.traceStep(
+                    traceContext,
+                    "memory-load",
+                    () -> memoryService.findActive(request.conversationId(), request.sessionId())
+            );
+            IntentResult intentResult = workflowTraceService.traceStep(
+                    traceContext,
+                    "intent-detection",
+                    () -> intentService.recognize(request.message())
+            );
+            if (intentResult.intent() == IntentType.UNKNOWN) {
+                throw new BusinessException(ErrorCode.UNKNOWN_INTENT, "无法识别可执行意图，请输入明确的修改要求。");
+            }
 
-        PromptSnapshot prompt = promptBuilder.buildRewritePrompt(conversation, request.message(), intentResult);
-        AIResponse aiResponse = llmChatService.call(new LlmChatRequest(
-                ChatTaskType.REWRITE,
-                prompt,
-                conversation.lastWeatherContext(),
-                conversation.lastResponse(),
-                intentResult,
-                request.message()
-        ));
-        Conversation updated = memoryService.appendRewrite(
-                conversation,
-                request.message(),
-                intentResult.intent(),
-                prompt,
-                aiResponse
-        );
-        List<String> changes = changes(intentResult);
-        log.info(
-                "conversation_rewrite conversationId={} sessionId={} intent={} previousVersion={} version={} changes={} latencyMs={}",
-                updated.conversationId(),
-                updated.sessionId(),
-                intentResult.intent(),
-                conversation.currentVersion(),
-                updated.currentVersion(),
-                changes,
-                aiResponse.latencyMs()
-        );
-        return new WeatherAiResponse(
-                updated.conversationId(),
-                updated.sessionId(),
-                conversation.currentVersion(),
-                updated.currentVersion(),
-                intentResult,
-                aiResponse,
-                changes
-        );
+            PromptSnapshot prompt = workflowTraceService.traceStep(
+                    traceContext,
+                    "prompt-render",
+                    () -> promptBuilder.buildRewritePrompt(conversation, request.message(), intentResult)
+            );
+            AIResponse aiResponse = workflowTraceService.traceStep(
+                    traceContext,
+                    "llm-call",
+                    () -> llmChatService.call(new LlmChatRequest(
+                            ChatTaskType.REWRITE,
+                            prompt,
+                            conversation.lastWeatherContext(),
+                            conversation.lastResponse(),
+                            intentResult,
+                            request.message(),
+                            traceContext.traceId()
+                    ))
+            );
+            EvaluationResult evaluation = workflowTraceService.traceStep(
+                    traceContext,
+                    "evaluation",
+                    () -> evaluationService.evaluate(aiResponse.content(), conversation.lastWeatherContext())
+            );
+            Conversation updated = workflowTraceService.traceStep(
+                    traceContext,
+                    "memory-save",
+                    () -> memoryService.appendRewrite(
+                            conversation,
+                            request.message(),
+                            intentResult.intent(),
+                            prompt,
+                            aiResponse
+                    )
+            );
+            List<String> changes = changes(intentResult);
+            traceContext.putMetadata("promptHash", prompt.contentHash());
+            traceContext.putMetadata("evaluationScore", evaluation.score());
+            traceContext.putMetadata("changes", changes);
+            WorkflowTrace trace = workflowTraceService.finish(traceContext, updated.conversationId(), "SUCCESS");
+            log.info(
+                    "conversation_rewrite traceId={} conversationId={} sessionId={} intent={} previousVersion={} version={} changes={} latencyMs={} evaluationScore={}",
+                    trace.traceId(),
+                    updated.conversationId(),
+                    updated.sessionId(),
+                    intentResult.intent(),
+                    conversation.currentVersion(),
+                    updated.currentVersion(),
+                    changes,
+                    aiResponse.latencyMs(),
+                    evaluation.score()
+            );
+            return new WeatherAiResponse(
+                    updated.conversationId(),
+                    updated.sessionId(),
+                    conversation.currentVersion(),
+                    updated.currentVersion(),
+                    intentResult,
+                    aiResponse,
+                    changes,
+                    evaluation,
+                    trace
+            );
+        } catch (RuntimeException exception) {
+            finishFailedTrace(traceContext, request.conversationId(), exception);
+            throw exception;
+        }
     }
 
     public ConversationHistoryResponse history(String conversationId, String sessionId, boolean includePrompt) {
@@ -221,5 +307,18 @@ public class ConversationService {
         if (Boolean.TRUE.equals(parameters.get(key))) {
             values.add(change);
         }
+    }
+
+    private void finishFailedTrace(WorkflowTraceContext traceContext, String conversationId, RuntimeException exception) {
+        traceContext.putMetadata("errorType", exception.getClass().getSimpleName());
+        traceContext.putMetadata("errorMessage", safeMessage(exception.getMessage()));
+        workflowTraceService.finish(traceContext, conversationId, "FAILED");
+    }
+
+    private String safeMessage(String message) {
+        if (message == null) {
+            return "";
+        }
+        return message.length() > 160 ? message.substring(0, 160) : message;
     }
 }

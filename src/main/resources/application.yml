@@ -14,6 +14,7 @@ spring:
       api-key: ${OPENAI_API_KEY:${DASHSCOPE_API_KEY:}}
       base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       chat:
+        completions-path: ${SPRING_AI_OPENAI_CHAT_COMPLETIONS_PATH:/chat/completions}
         options:
           model: ${OPENAI_MODEL:qwen-plus}
 
@@ -41,5 +42,7 @@ app:
     active-version: v1
 
 logging:
+  pattern:
+    level: "%5p [traceId:%X{traceId:-}]"
   level:
     com.shenzhen.meteorologicalagent: INFO

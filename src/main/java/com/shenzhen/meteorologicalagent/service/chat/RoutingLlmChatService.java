@@ -4,8 +4,11 @@ import com.shenzhen.meteorologicalagent.common.ErrorCode;
 import com.shenzhen.meteorologicalagent.common.exception.BusinessException;
 import com.shenzhen.meteorologicalagent.config.AiModelProperties;
 import com.shenzhen.meteorologicalagent.domain.ai.AIResponse;
+import com.shenzhen.meteorologicalagent.domain.ai.StructuredForecast;
 import com.shenzhen.meteorologicalagent.parser.ResponseSectionParser;
+import com.shenzhen.meteorologicalagent.parser.StructuredForecastParser;
 import com.shenzhen.meteorologicalagent.util.IdUtils;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -23,19 +26,22 @@ public class RoutingLlmChatService implements LlmChatService {
     private final AiModelProperties aiModelProperties;
     private final ForecastTextRenderer fallbackRenderer;
     private final ResponseSectionParser responseSectionParser;
+    private final StructuredForecastParser structuredForecastParser;
 
     public RoutingLlmChatService(
             ObjectProvider<ChatClient.Builder> chatClientBuilderProvider,
             Environment environment,
             AiModelProperties aiModelProperties,
             ForecastTextRenderer fallbackRenderer,
-            ResponseSectionParser responseSectionParser
+            ResponseSectionParser responseSectionParser,
+            StructuredForecastParser structuredForecastParser
     ) {
         this.chatClientBuilderProvider = chatClientBuilderProvider;
         this.environment = environment;
         this.aiModelProperties = aiModelProperties;
         this.fallbackRenderer = fallbackRenderer;
         this.responseSectionParser = responseSectionParser;
+        this.structuredForecastParser = structuredForecastParser;
     }
 
     @Override
@@ -44,6 +50,7 @@ public class RoutingLlmChatService implements LlmChatService {
         boolean springAiEnabled = shouldUseSpringAi();
         String content = springAiEnabled ? callSpringAi(request) : fallbackRenderer.render(request);
         long latencyMs = System.currentTimeMillis() - startedAt;
+        StructuredForecast structuredOutput = structuredForecastParser.parse(content, request.weatherContext());
 
         AIResponse response = new AIResponse(
                 IdUtils.newId("r"),
@@ -54,10 +61,12 @@ public class RoutingLlmChatService implements LlmChatService {
                 request.prompt().promptVersion(),
                 estimateTokens(request.prompt().promptLength()),
                 estimateTokens(content.length()),
-                latencyMs
+                latencyMs,
+                structuredOutput
         );
         log.info(
-                "llm_call task={} model={} prompt={} promptLength={} inputTokens={} outputTokens={} latencyMs={}",
+                "llm_call traceId={} task={} model={} prompt={} promptLength={} inputTokens={} outputTokens={} latencyMs={}",
+                request.workflowTraceId(),
                 request.taskType(),
                 response.modelName(),
                 response.promptName(),
@@ -94,7 +103,11 @@ public class RoutingLlmChatService implements LlmChatService {
             throw exception;
         } catch (Exception exception) {
             log.warn("spring_ai_call_failed prompt={} reason={}", request.prompt().promptName().value(), exception.getMessage());
-            throw new BusinessException(ErrorCode.LLM_CALL_FAILED, "llm call failed");
+            throw new BusinessException(
+                    ErrorCode.LLM_CALL_FAILED,
+                    "llm call failed",
+                    Map.of("promptName", request.prompt().promptName().value(), "reason", safeReason(exception.getMessage()))
+            );
         }
     }
 
@@ -109,5 +122,12 @@ public class RoutingLlmChatService implements LlmChatService {
 
     private int estimateTokens(int length) {
         return Math.max(1, (int) Math.ceil(length / 2.0));
+    }
+
+    private String safeReason(String message) {
+        if (message == null) {
+            return "";
+        }
+        return message.length() > 200 ? message.substring(0, 200) : message;
     }
 }
