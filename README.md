@@ -6,3 +6,5 @@
 
 - [架构设计文档](docs/ARCHITECTURE.md)
 - [产品需求文档 PRD](docs/PRD.md)
+- [API 设计文档](docs/API_DESIGN.md)
+- [数据库设计文档](docs/DATABASE_DESIGN.md)
