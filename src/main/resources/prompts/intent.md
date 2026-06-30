@@ -1,0 +1,17 @@
+# Intent Recognition Prompt
+
+识别用户输入属于哪个预报生成或改写意图，并输出结构化 JSON。
+
+支持 Intent：
+
+- GENERATE
+- SIMPLIFY
+- MORE_DETAIL
+- MORE_FORMAL
+- MORE_CASUAL
+- INCREASE_RAIN
+- DECREASE_RAIN
+- ADD_WARNING
+- REGENERATE
+- UNKNOWN
+

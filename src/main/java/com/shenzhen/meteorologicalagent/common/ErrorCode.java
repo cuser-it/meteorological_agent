@@ -1,0 +1,17 @@
+package com.shenzhen.meteorologicalagent.common;
+
+public enum ErrorCode {
+    OK,
+    INVALID_REQUEST,
+    INVALID_WEATHER_CONTEXT,
+    CONVERSATION_NOT_FOUND,
+    NO_PREVIOUS_RESPONSE,
+    CONVERSATION_RESET,
+    UNKNOWN_INTENT,
+    UNSUPPORTED_INTENT,
+    LLM_RATE_LIMITED,
+    LLM_CALL_FAILED,
+    LLM_TIMEOUT,
+    INTERNAL_ERROR
+}
+
