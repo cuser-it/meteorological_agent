@@ -1,7 +1,10 @@
 <script setup>
+import { computed } from 'vue'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 import { Activity, AlertTriangle, BrainCircuit, Clock, CloudRain, Hash, Server } from 'lucide-vue-next'
 
-defineProps({
+const props = defineProps({
   response: {
     type: Object,
     default: null
@@ -23,6 +26,21 @@ defineProps({
 function elapsedSeconds(operation) {
   return operation ? Math.floor(operation.elapsedMs / 1000) : 0
 }
+
+const renderedForecast = computed(() => {
+  const content = props.response?.aiResponse?.content
+  if (!content) {
+    return ''
+  }
+  const html = marked.parse(content, {
+    async: false,
+    breaks: true,
+    gfm: true
+  })
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true }
+  })
+})
 </script>
 
 <template>
@@ -88,7 +106,7 @@ function elapsedSeconds(operation) {
         <CloudRain :size="16" />
         <span>AI Forecast</span>
       </div>
-      <pre>{{ response.aiResponse.content }}</pre>
+      <div class="markdown-body" v-html="renderedForecast"></div>
     </article>
 
     <div v-else-if="activeOperation" class="loading-forecast">
